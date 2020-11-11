@@ -10,6 +10,18 @@ import {customItemRenderer, customGroupRenderer} from 'demo/customRenderers';
 import {Layout, Form, InputNumber, Button, DatePicker, Checkbox, Switch} from 'antd';
 import 'antd/dist/antd.css';
 import './style.css';
+import {TimeSeries, Index, TimeRangeEvent, TimeRange} from 'pondjs';
+import {
+  Resizable,
+  Charts,
+  ChartContainer,
+  ChartRow,
+  YAxis,
+  LineChart,
+  styler,
+  EventChart
+} from 'react-timeseries-charts';
+import data from './speedData.js';
 
 const {TIMELINE_MODES} = Timeline;
 
@@ -26,18 +38,24 @@ export default class DemoTimeline extends Component {
   constructor(props) {
     super(props);
 
-    const startDate = moment('2018-08-31');
+    const series = new TimeSeries({
+      name: 'hilo_rainfall',
+      columns: ['index', 'speed'],
+      points: data.values.map(([d, value]) => [Index.getIndexString('1h', new Date(d)), value])
+    });
+    const startDate = moment('2018-08-31T00:00z');
     //const endDate = startDate.clone().add(4, 'days');
-    const endDate = moment('2018-09-30');
+    const endDate = moment('2018-09-01T00:00z');
     this.state = {
       selectedItems: [],
-      rows: 100,
-      items_per_row: 30,
-      snap: 60,
+      rows: 2,
+      items_per_row: 2,
+      snap: 1,
       startDate,
       endDate,
       message: '',
-      timelineMode: TIMELINE_MODES.SELECT | TIMELINE_MODES.DRAG | TIMELINE_MODES.RESIZE
+      timelineMode: TIMELINE_MODES.SELECT | TIMELINE_MODES.DRAG | TIMELINE_MODES.RESIZE,
+      series: series
     };
     this.reRender = this.reRender.bind(this);
     this.zoomIn = this.zoomIn.bind(this);
@@ -53,42 +71,49 @@ export default class DemoTimeline extends Component {
   }
 
   reRender() {
-    const list = [];
-    const groups = [];
+    const list = [
+      {
+        key: '0',
+        title: 'Night shift',
+        color: COLORS[0],
+        row: '0',
+        start: moment('2018-08-31T00:00z'),
+        end: moment('2018-08-31T10:00z')
+      },
+      {
+        key: '1',
+        title: 'Downtime',
+        color: COLORS[1],
+        row: '1',
+        start: moment('2018-08-31T00:00z'),
+        end: moment('2018-08-31T01:15z')
+      },
+      {
+        key: '3',
+        title: 'Running',
+        color: COLORS[2],
+        row: '1',
+        start: moment('2018-08-31T01:16z'),
+        end: moment('2018-08-31T10:00z')
+      },
+      {
+        key: '4',
+        title: 'Setup',
+        color: COLORS[2],
+        row: '1',
+        start: moment('2018-08-31T12:00z'),
+        end: moment('2018-08-31T14:00z')
+      }
+    ];
+    const groups = [
+      {id: '0', title: `Shift`},
+      {id: '1', title: `Machine Status`}
+    ];
+
     const {snap} = this.state;
 
     this.key = 0;
-    for (let i = 0; i < this.state.rows; i++) {
-      groups.push({id: i, title: `Row ${i}`});
-      for (let j = 0; j < this.state.items_per_row; j++) {
-        this.key += 1;
-        const color = COLORS[(i + j) % COLORS.length];
-        const duration = ITEM_DURATIONS[Math.floor(Math.random() * ITEM_DURATIONS.length)];
-        // let start = last_moment;
-        let start = moment(
-          Math.random() * (this.state.endDate.valueOf() - this.state.startDate.valueOf()) +
-            this.state.startDate.valueOf()
-        );
-        let end = start.clone().add(duration);
 
-        // Round to the nearest snap distance
-        const roundedStartMinutes = Math.floor(start.minute() / snap) * snap;
-        const roundedEndMinutes = Math.floor(end.minute() / snap) * snap;
-        start.minute(roundedStartMinutes).second(0);
-        end.minute(roundedEndMinutes).second(0);
-
-        list.push({
-          key: this.key,
-          title: duration.humanize(),
-          color,
-          row: i,
-          start,
-          end
-        });
-      }
-    }
-
-    // this.state = {selectedItems: [11, 12], groups, items: list};
     this.forceUpdate();
     this.setState({items: list, groups});
   }
@@ -98,6 +123,11 @@ export default class DemoTimeline extends Component {
     this.setState({selectedItems: [], message});
   };
   zoomIn() {
+    //   console.log(new Date(this.state.startDate) + '   ' + new Date(this.state.endDate))
+    //   console.log(new Date(this.state.startDate.clone().add(1,"hours")) + '   ' + new Date(this.state.endDate.clone().subtract(1, 'hours')))
+
+    // this.setState({startDate:this.state.startDate.clone().add(1,"hours"), endDate: this.state.startDate.clone().subtract(1, 'hours')});
+
     let currentMins = this.state.endDate.diff(this.state.startDate, 'minutes');
     let newMins = currentMins / 2;
     this.setState({endDate: this.state.startDate.clone().add(newMins, 'minutes')});
@@ -191,13 +221,15 @@ export default class DemoTimeline extends Component {
      * repeat code beyond the sacred 5 lines...
      */
     function absorbChange(itemList, selectedItems) {
+      console.log(JSON.stringify(itemList));
       itemList.forEach(item => {
         let i = selectedItems.find(i => {
           return i.key == item.key;
         });
+        // console.log(JSON.stringify(i))
         if (i) {
           item = i;
-          item.title = moment.duration(item.end.diff(item.start)).humanize();
+          item.title = i.title;
         }
       });
     }
@@ -237,8 +269,6 @@ export default class DemoTimeline extends Component {
   render() {
     const {
       selectedItems,
-      rows,
-      items_per_row,
       snap,
       startDate,
       endDate,
@@ -246,7 +276,8 @@ export default class DemoTimeline extends Component {
       groups,
       message,
       useCustomRenderers,
-      timelineMode
+      timelineMode,
+      series
     } = this.state;
     const rangeValue = [startDate, endDate];
 
@@ -255,44 +286,12 @@ export default class DemoTimeline extends Component {
     const resizeable = (TIMELINE_MODES.RESIZE & timelineMode) === TIMELINE_MODES.RESIZE;
 
     const rowLayers = [];
-    for (let i = 0; i < rows; i += 1) {
-      if (i % 5 === 0 && i !== 0) {
-        continue;
-      }
-      let curDate = startDate.clone();
-      while (curDate.isSameOrBefore(endDate)) {
-        const dayOfWeek = Number(curDate.format('d')); // 0 -> 6: Sun -> Sat
-        let bandDuration = 0; // days
-        let color = '';
-        if (dayOfWeek % 6 === 0) {
-          color = 'blue';
-          bandDuration = dayOfWeek === 6 ? 2 : 1; // 2 if sat, 1 if sun
-        } else {
-          color = 'green';
-          bandDuration = 6 - dayOfWeek;
-        }
-
-        rowLayers.push({
-          start: curDate.clone(),
-          end: curDate.clone().add(bandDuration, 'days'),
-          style: {backgroundColor: color, opacity: '0.3'},
-          rowNumber: i
-        });
-        curDate.add(bandDuration, 'days');
-      }
-    }
 
     return (
       <Layout className="layout demo-layout">
         <Layout.Content className="demo-layout-content">
           <div style={{margin: 24}}>
             <Form layout="inline">
-              <Form.Item label="No rows">
-                <InputNumber value={rows} onChange={e => this.setState({rows: e})} />
-              </Form.Item>
-              <Form.Item label="No items per row">
-                <InputNumber value={items_per_row} onChange={e => this.setState({items_per_row: e})} />
-              </Form.Item>
               <Form.Item label="Snap (mins)">
                 <InputNumber value={snap} onChange={e => this.setState({snap: e})} />
               </Form.Item>
@@ -343,11 +342,12 @@ export default class DemoTimeline extends Component {
           </div>
           <Timeline
             shallowUpdateCheck
+            // showCursorTime={false}
             items={items}
             groups={groups}
             startDate={startDate}
             endDate={endDate}
-            rowLayers={rowLayers}
+            rowLayers={[]}
             selectedItems={selectedItems}
             timelineMode={timelineMode}
             snapMinutes={snap}
@@ -355,13 +355,27 @@ export default class DemoTimeline extends Component {
             onItemDoubleClick={this.handleItemDoubleClick}
             onItemContextClick={this.handleItemContextClick}
             onInteraction={this.handleInteraction}
-            onRowClick={this.handleRowClick}
-            onRowContextClick={this.handleRowContextClick}
-            onRowDoubleClick={this.handleRowDoubleClick}
+            // onRowClick={this.handleRowClick}
+            // onRowContextClick={this.handleRowContextClick}
+            // onRowDoubleClick={this.handleRowDoubleClick}
             itemRenderer={useCustomRenderers ? customItemRenderer : undefined}
             groupRenderer={useCustomRenderers ? customGroupRenderer : undefined}
             groupTitleRenderer={useCustomRenderers ? () => <div>Group title</div> : undefined}
           />
+          <br />
+          <Resizable>
+            <ChartContainer
+              timeRange={new TimeRange(new Date(startDate), new Date(endDate))}
+              enablePanZoom={true}
+              onTimeRangeChanged={this.handleTimeRangeChange}>
+              <ChartRow height="150">
+                <YAxis id="speed" min={0} max={1000} type="linear" />
+                <Charts>
+                  <LineChart axis="speed" spacing={1} columns={['speed']} series={series} minBarHeight={1} />
+                </Charts>
+              </ChartRow>
+            </ChartContainer>
+          </Resizable>
         </Layout.Content>
       </Layout>
     );
